@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game AI：遊戲中的 NPC 如何思考與行動？</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5d667a;
+      --paper: #f7f8fb;
+      --panel: #ffffff;
+      --line: #dfe4ef;
+      --blue: #315bce;
+      --cyan: #2ba7a9;
+      --orange: #ef8e45;
+      --green: #4e9f78;
+      --red: #ca5a64;
+      --shadow: 0 18px 50px rgba(23,32,51,.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #e9edf5;
+      color: var(--ink);
+      font-family: "Noto Sans TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+    .deck { width: 100vw; height: 100vh; position: relative; }
+    .slide {
+      display: none;
+      width: min(1120px, calc(100vw - 64px));
+      height: min(700px, calc(100vh - 64px));
+      margin: max(32px, calc((100vh - 700px)/2)) auto;
+      padding: 46px 58px 34px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .slide.active { display: grid; }
+    .eyebrow {
+      color: var(--blue);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    h1 { font-size: clamp(38px, 5vw, 64px); line-height: 1.12; margin: 0; }
+    h2 { font-size: clamp(31px, 3.6vw, 48px); line-height: 1.12; margin: 0 0 24px; }
+    h3 { margin: 0 0 8px; font-size: 21px; }
+    p, li { font-size: clamp(17px, 1.55vw, 21px); line-height: 1.55; }
+    p { margin: 12px 0; }
+    ul, ol { margin: 8px 0 0; padding-left: 26px; }
+    li + li { margin-top: 8px; }
+    .lead { color: var(--muted); font-size: clamp(20px, 2vw, 27px); max-width: 820px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: stretch; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    .accent { color: var(--blue); font-weight: 800; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      background: #edf2ff;
+      color: var(--blue);
+      padding: 5px 10px;
+      font-weight: 800;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    .source {
+      position: absolute;
+      left: 58px;
+      right: 58px;
+      bottom: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+    }
+    .source a { color: var(--blue); text-decoration: none; }
+    .controls {
+      position: fixed;
+      right: 24px;
+      bottom: 18px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .controls button {
+      border: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: white;
+      cursor: pointer;
+      font-size: 18px;
+    }
+    .counter {
+      min-width: 58px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 800;
+      background: rgba(255,255,255,.88);
+      border-radius: 999px;
+      padding: 8px;
+    }
+    .cycle {
+      display: grid;
+      grid-template-columns: 1fr 70px 1fr 70px 1fr;
+      align-items: center;
+      gap: 12px;
+      margin-top: 36px;
+    }
+    .cycle-box {
+      text-align: center;
+      border-radius: 18px;
+      padding: 28px 16px;
+      background: var(--paper);
+      border: 2px solid var(--line);
+    }
+    .arrow { text-align: center; font-size: 38px; color: var(--blue); }
+    .state-row {
+      display: grid;
+      grid-template-columns: 1fr 90px 1fr 90px 1fr;
+      align-items: center;
+      gap: 10px;
+      margin-top: 55px;
+    }
+    .state {
+      border: 2px solid var(--blue);
+      border-radius: 18px;
+      text-align: center;
+      padding: 28px 10px;
+      background: #f3f6ff;
+    }
+    .edge { text-align: center; color: var(--muted); font-size: 14px; }
+    .code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #172033;
+      color: #edf4ff;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .tree {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      width: 78%;
+      margin: 20px auto 0;
+    }
+    .tree-node {
+      border-radius: 12px;
+      border: 2px solid var(--line);
+      padding: 12px 16px;
+      text-align: center;
+      background: white;
+    }
+    .tree-node.composite { border-color: var(--blue); background: #edf2ff; }
+    .tree-node.decorator { border-color: var(--orange); background: #fff4ea; }
+    .tree-node.task { border-color: var(--green); background: #edf8f2; }
+    .grid-map {
+      display: grid;
+      grid-template-columns: repeat(3, 54px);
+      grid-template-rows: repeat(3, 54px);
+      gap: 6px;
+      margin: 18px auto;
+    }
+    .cell {
+      border: 1px solid #bdc6d8;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: white;
+      font-weight: 800;
+    }
+    .cell.wall { background: #c6ccda; color: #697184; }
+    .cell.start { background: #dff4e8; color: var(--green); }
+    .cell.goal { background: #ffe7d2; color: #b75d24; }
+    .formula {
+      text-align: center;
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 900;
+      color: var(--blue);
+      margin: 30px 0 18px;
+    }
+    .flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+    .flow .node {
+      border: 2px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+      padding: 12px 14px;
+      font-weight: 800;
+    }
+    .flow .arrow { font-size: 24px; }
+    .steer-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .mini-card { border-left: 5px solid var(--cyan); padding: 12px 14px; background: var(--paper); border-radius: 10px; }
+    .mini-card strong { display: block; font-size: 18px; }
+    @media (max-width: 800px) {
+      .slide { width: calc(100vw - 24px); height: calc(100vh - 24px); margin: 12px auto; padding: 28px 30px 42px; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .grid-3 { gap: 8px; }
+      .source { left: 30px; right: 30px; }
+      .cycle { grid-template-columns: 1fr; }
+      .cycle .arrow { transform: rotate(90deg); height: 34px; }
+      .state-row { grid-template-columns: 1fr; margin-top: 20px; }
+      .state-row .edge { display: none; }
+      .controls { right: 12px; bottom: 8px; }
+      .controls button { width: 38px; height: 38px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="Game AI 教學投影片">
+
+    <section class="slide active" data-title="NPC 真的會思考嗎">
+      <div class="eyebrow">Game AI 基礎</div>
+      <h1>NPC 真的會「思考」嗎？</h1>
+      <p class="lead">不一定像人類；重點是讓角色依環境與條件選擇適當行動。</p>
+      <div class="grid-3" style="margin-top:42px">
+        <div class="panel"><h3>巡邏 Patrol</h3><p>未發現玩家時沿區域移動。</p></div>
+        <div class="panel"><h3>追逐 Chase</h3><p>發現玩家後追蹤目標。</p></div>
+        <div class="panel"><h3>攻擊 Attack</h3><p>進入範圍後執行動作。</p></div>
+      </div>
+      <div class="source">來源：<a href="https://gamedev.net/tutorials/programming/artificial-intelligence/the-total-beginners-guide-to-game-ai-r4942" target="_blank">Game AI 基礎文章引用資源</a>、<a href="../wiki_articles/01_Game_AI_基礎概念.md" target="_blank">Wiki 01</a></div>
+    </section>
+
+    <section class="slide" data-title="Sense Think Act">
+      <div class="eyebrow">感知與決策循環</div>
+      <h2>Sense / Think / Act</h2>
+      <div class="cycle">
+        <div class="cycle-box"><h3>Sense 感知</h3><p>玩家位置、距離、生命值、視野</p></div>
+        <div class="arrow">→</div>
+        <div class="cycle-box"><h3>Think 決策</h3><p>判斷巡邏、追逐、逃跑或攻擊</p></div>
+        <div class="arrow">→</div>
+        <div class="cycle-box"><h3>Act 行動</h3><p>移動、攻擊或轉換狀態</p></div>
+      </div>
+      <p style="text-align:center;color:var(--muted);margin-top:24px">環境改變後，再回到 Sense 開始下一輪</p>
+      <div class="source">來源：<a href="../wiki_articles/01_Game_AI_基礎概念.md" target="_blank">Wiki 01：Sense / Think / Act</a></div>
+    </section>
+
+    <section class="slide" data-title="FSM">
+      <div class="eyebrow">有限狀態機 Finite State Machine</div>
+      <h2>用 FSM 管理明確行為狀態</h2>
+      <div class="state-row">
+        <div class="state"><strong>Patrol</strong><br>巡邏</div>
+        <div class="edge">發現玩家 →</div>
+        <div class="state"><strong>Chase</strong><br>追逐</div>
+        <div class="edge">進入距離 →</div>
+        <div class="state"><strong>Attack</strong><br>攻擊</div>
+      </div>
+      <div class="grid-2" style="margin-top:34px">
+        <div class="panel"><h3>固定的一組 State</h3><p>同一時間只有一個目前狀態。</p></div>
+        <div class="panel"><h3>Input / Event + Transition</h3><p>若沒定義對應轉換，輸入可能被忽略。</p></div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/02_FSM_有限狀態機.md" target="_blank">Wiki 02</a>、<a href="https://gameprogrammingpatterns.com/state.html" target="_blank">Bob Nystrom：State</a></div>
+    </section>
+
+    <section class="slide" data-title="FSM 實作">
+      <div class="eyebrow">FSM 實作方式</div>
+      <h2>從旗標到 State Pattern</h2>
+      <div class="grid-2">
+        <div>
+          <span class="tag">簡單</span>
+          <div class="code">enum NPCState {
+  Patrol,
+  Chase,
+  Attack
+}
+
+switch (state) {
+  case NPCState.Patrol:
+    if (PlayerDetected())
+      state = NPCState.Chase;
+}</div>
+        </div>
+        <div>
+          <span class="tag">封裝</span>
+          <div class="panel">
+            <h3>State Pattern</h3>
+            <p>每個狀態物件處理輸入與更新。</p>
+            <p><strong>Entry Action：</strong>進入時執行</p>
+            <p><strong>Exit Action：</strong>離開時執行</p>
+          </div>
+        </div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/02_FSM_有限狀態機.md" target="_blank">Wiki 02：Enum、Switch、State Pattern</a>；程式片段為教學改寫。</div>
+    </section>
+
+    <section class="slide" data-title="FSM 限制">
+      <div class="eyebrow">FSM 的成長問題</div>
+      <h2>能力組合容易造成狀態爆炸</h2>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>單一 FSM</h3>
+          <p>站立、持槍站立、跳躍、持槍跳躍…</p>
+          <p>n 種行為 × m 種裝備可接近 n × m 個組合。</p>
+        </div>
+        <div class="panel">
+          <h3>進階拆分</h3>
+          <p><strong>Concurrent FSM：</strong>分成兩台狀態機</p>
+          <p><strong>Hierarchical：</strong>共用上層行為</p>
+          <p><strong>Pushdown：</strong>用堆疊記住上一狀態</p>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:26px">行為變複雜時，再評估 Behavior Tree 或 Planning System。</p>
+      <div class="source">來源：<a href="../wiki_articles/02_FSM_有限狀態機.md" target="_blank">Wiki 02</a>、<a href="https://gameprogrammingpatterns.com/state.html" target="_blank">Bob Nystrom：State</a></div>
+    </section>
+
+    <section class="slide" data-title="Behavior Tree">
+      <div class="eyebrow">行為樹 Behavior Tree</div>
+      <h2>用節點樹組織決策與動作</h2>
+      <div class="tree">
+        <div class="tree-node composite">Selector / Sequence（Composite）</div>
+        <div class="tree-node decorator">Decorator：是否看見玩家？</div>
+        <div class="tree-node task">Task：追逐玩家</div>
+      </div>
+      <div class="grid-3" style="margin-top:22px">
+        <div class="panel"><strong>Decorator</strong><br>檢查條件</div>
+        <div class="panel"><strong>Composite</strong><br>組織子節點</div>
+        <div class="panel"><strong>Task</strong><br>執行實際動作</div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/03_Behavior_Tree_行為樹.md" target="_blank">Wiki 03</a>、<a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/behavior-tree-in-unreal-engine---overview" target="_blank">Epic Games：Behavior Tree Overview</a></div>
+    </section>
+
+    <section class="slide" data-title="Blackboard">
+      <div class="eyebrow">共享資訊與執行架構</div>
+      <h2>Blackboard 讓節點共享決策資料</h2>
+      <div class="flow">
+        <div class="node">AI Controller</div><div class="arrow">→</div>
+        <div class="node">Behavior Tree</div><div class="arrow">→</div>
+        <div class="node">Blackboard</div><div class="arrow">→</div>
+        <div class="node">Task</div>
+      </div>
+      <div class="grid-3" style="margin-top:28px">
+        <div class="panel"><strong>HasLineOfSight</strong><br>是否看見玩家</div>
+        <div class="panel"><strong>TargetLocation</strong><br>玩家位置資訊</div>
+        <div class="panel"><strong>CanAttack</strong><br>是否可攻擊</div>
+      </div>
+      <p style="margin-top:20px">Unreal Engine 中可由事件更新資料並觸發分支，稱為 Event-Driven。</p>
+      <div class="source">來源：<a href="../wiki_articles/03_Behavior_Tree_行為樹.md" target="_blank">Wiki 03：Blackboard、Pawn、AI Controller、Event-Driven</a></div>
+    </section>
+
+    <section class="slide" data-title="Grid Graph">
+      <div class="eyebrow">Grid 與 Graph</div>
+      <h2>從格線地圖建立 Node 與 Edge</h2>
+      <div class="grid-2">
+        <div class="grid-map" aria-label="3乘3簡單地圖">
+          <div class="cell start">S</div><div class="cell">.</div><div class="cell">.</div>
+          <div class="cell">.</div><div class="cell wall">#</div><div class="cell">.</div>
+          <div class="cell">.</div><div class="cell">.</div><div class="cell goal">G</div>
+        </div>
+        <div class="panel">
+          <h3>Graph 基本元素</h3>
+          <p><strong>Node：</strong>可到達的位置</p>
+          <p><strong>Edge：</strong>節點間的連接</p>
+          <p><strong>Weight：</strong>移動成本</p>
+          <p><strong>Neighbors：</strong>可直接移動到的相鄰節點</p>
+        </div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/05_Grids_and_Graphs_網格與圖形.md" target="_blank">Wiki 05</a>、<a href="https://www.redblobgames.com/pathfinding/grids/graphs.html" target="_blank">Red Blob Games：Grids and Graphs</a></div>
+    </section>
+
+    <section class="slide" data-title="Graph 邊與障礙">
+      <div class="eyebrow">Graph 類型與障礙表示</div>
+      <h2>邊可以雙向、單向、加權或重複</h2>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Undirected／Directed</h3>
+          <p>B ↔ C：雙向通行</p>
+          <p>B → C：單向通行，不等於 C → B</p>
+          <h3>Weighted／Multigraph</h3>
+          <p>邊可附移動成本，也可有多條選擇。</p>
+        </div>
+        <div class="panel">
+          <h3>障礙物三策略</h3>
+          <p>1. Remove Nodes：移除障礙節點</p>
+          <p>2. Remove Edges：移除不可穿越邊</p>
+          <p>3. Infinite Weight：障礙邊設為無限成本</p>
+        </div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/05_Grids_and_Graphs_網格與圖形.md" target="_blank">Wiki 05：Variants、Obstacles</a></div>
+    </section>
+
+    <section class="slide" data-title="A Star">
+      <div class="eyebrow">A* Pathfinding</div>
+      <h2>A* 如何找到通往目標的路？</h2>
+      <div class="formula">f(n) = g(n) + h(n)</div>
+      <div class="grid-3">
+        <div class="panel"><strong>BFS</strong><p>每步成本相同，向各方向平均擴展。</p></div>
+        <div class="panel"><strong>Dijkstra</strong><p>考慮不同 Edge Cost。</p></div>
+        <div class="panel"><strong>A*</strong><p>結合實際成本與目標方向估計。</p></div>
+      </div>
+      <p style="text-align:center">Priority Queue 每次取出優先值最低的節點；Heuristic 不高估時可保證最短路徑。</p>
+      <div class="source">來源：<a href="../wiki_articles/04_A_Star_A星尋路演算法.md" target="_blank">Wiki 04</a>、<a href="https://www.redblobgames.com/pathfinding/a-star/introduction.html" target="_blank">Red Blob Games：A*</a></div>
+    </section>
+
+    <section class="slide" data-title="路徑與轉向銜接">
+      <div class="eyebrow">路徑重建與即時移動</div>
+      <h2>A* 找路，Steering 負責走路</h2>
+      <div class="flow">
+        <div class="node">A* 找到路徑</div><div class="arrow">→</div>
+        <div class="node">came_from 重建節點</div><div class="arrow">→</div>
+        <div class="node">Steering 產生轉向</div><div class="arrow">→</div>
+        <div class="node">Locomotion 移動</div>
+      </div>
+      <div class="grid-2" style="margin-top:32px">
+        <div class="panel"><h3>A*</h3><p>在網路上找出一條路線。</p></div>
+        <div class="panel"><h3>Steering</h3><p>處理轉彎、避障、減速與跟隨路徑。</p></div>
+      </div>
+      <div class="source">來源：<a href="../wiki_articles/04_A_Star_A星尋路演算法.md" target="_blank">Wiki 04</a>、<a href="../wiki_articles/06_Steering_Behaviors_移動與轉向行為.md" target="_blank">Wiki 06</a></div>
+    </section>
+
+    <section class="slide" data-title="Steering Behaviors">
+      <div class="eyebrow">Steering Behaviors 與完整 NPC</div>
+      <h2>多種移動行為組合成完整角色</h2>
+      <div class="steer-list">
+        <div class="mini-card"><strong>Seek / Flee</strong>朝向／遠離目標</div>
+        <div class="mini-card"><strong>Pursuit / Evasion</strong>預測移動目標並追／躲</div>
+        <div class="mini-card"><strong>Arrival</strong>接近目標後減速停止</div>
+        <div class="mini-card"><strong>Wander / Obstacle Avoidance</strong>自然遊走／避開前方威脅</div>
+        <div class="mini-card"><strong>Path Following</strong>沿預定路徑移動</div>
+        <div class="mini-card"><strong>Flocking</strong>Separation + Cohesion + Alignment</div>
+      </div>
+      <p style="margin-top:18px"><strong>一個守衛：</strong>巡邏 → 發現玩家 → Pursuit → 前方有障礙時避障 → 到達路線後 Arrival／Path Following</p>
+      <div class="source">來源：<a href="../wiki_articles/06_Steering_Behaviors_移動與轉向行為.md" target="_blank">Wiki 06</a>、<a href="https://www.red3d.com/cwr/steer/gdc99/" target="_blank">Craig Reynolds GDC 1999 論文</a></div>
+    </section>
+
+  </main>
+  <div class="controls" aria-label="投影片控制">
+    <button id="prev" type="button" aria-label="上一頁">‹</button>
+    <div class="counter" id="counter">1 / 12</div>
+    <button id="next" type="button" aria-label="下一頁">›</button>
+  </div>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    let index = 0;
+    function show(next) {
+      index = (next + slides.length) % slides.length;
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+      document.getElementById('counter').textContent = `${index + 1} / ${slides.length}`;
+      document.title = `${slides[index].dataset.title} — Game AI 教學投影片`;
+    }
+    document.getElementById('prev').addEventListener('click', () => show(index - 1));
+    document.getElementById('next').addEventListener('click', () => show(index + 1));
+    document.addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) show(index + 1);
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) show(index - 1);
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+    let touchStartX = null;
+    document.addEventListener('touchstart', event => {
+      touchStartX = event.changedTouches[0].screenX;
+    }, { passive: true });
+    document.addEventListener('touchend', event => {
+      if (touchStartX === null) return;
+      const dx = event.changedTouches[0].screenX - touchStartX;
+      if (Math.abs(dx) > 50) show(index + (dx < 0 ? 1 : -1));
+      touchStartX = null;
+    }, { passive: true });
+    show(0);
+  </script>
+</body>
+</html>
